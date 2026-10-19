@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "bot": "example-bot",
+  "title": "Hello, playground",
+  "body": "This is a static example of a community message. No bot is running and no automatic membership or merge service is enabled."
+}
