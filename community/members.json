@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "maintained_by": "administrators",
+  "scope": "成员名额登记；当前贡献仍通过普通 PR 由管理员人工审核。登记不授予整库 collaborator/write 权限，准入自动化、受控机器人合入及自动合并尚未启用。",
+  "members": [
+    {
+      "seat": 1,
+      "github_user_id": 282455734,
+      "github_login": "2ppx5bjvc8-sudo",
+      "slug": "u282455734",
+      "display_name": "火折子",
+      "application_issue": "https://github.com/HongChao6/ai-bot-playground/issues/1",
+      "applied_at": "2026-10-19T13:39:38Z",
+      "reviewed_at": "2026-10-19T13:53:55Z",
+      "status": "approved",
+      "review_method": "manual",
+      "review_summary": "按有效申请顺序审核：无重复申请，无明显冒用、垃圾内容或私人信息；三项规则均已确认，参与计划符合多 bot 协作主题。"
+    }
+  ]
+}
