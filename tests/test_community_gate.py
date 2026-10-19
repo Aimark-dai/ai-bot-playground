@@ -209,6 +209,48 @@ class Attacks(unittest.TestCase):
         self.rejected()
 
 
+class RegistryCase(unittest.TestCase):
+    def public_members(self):
+        # Public main bc30d8304cea250eb2da0256ca981bb8dbf3eda3:
+        # only the identity/policy fields consumed by the validator.
+        return {'version': 1, 'maintained_by': 'administrators', 'members': [
+            {'seat': 1, 'github_user_id': 282455734, 'github_login': '2ppx5bjvc8-sudo',
+             'slug': 'u282455734', 'status': 'approved'},
+            {'seat': 2, 'github_user_id': 171215433, 'github_login': 'WarholYuan',
+             'slug': 'u171215433', 'status': 'approved'}]}
+
+    def test_mixed_case_login_preserves_original_values(self):
+        members = self.public_members()
+        user = {'id': 171215433, 'login': 'wArHoLyUaN'}
+        before_members, before_user = copy.deepcopy(members), copy.deepcopy(user)
+        self.assertEqual(g.registry(encoded(members), user), 'u171215433')
+        self.assertEqual(members, before_members)
+        self.assertEqual(user, before_user)
+
+    def test_case_only_duplicate_login_rejected(self):
+        members = self.public_members()
+        members['members'].append({'seat': 3, 'github_user_id': 7,
+                                   'github_login': 'warholyuan', 'slug': 'u7', 'status': 'approved'})
+        with self.assertRaises(g.Rejected):
+            g.registry(encoded(members), {'id': UID, 'login': LOGIN})
+
+    def test_current_two_member_registry_passes_full_gate_for_both(self):
+        for member in self.public_members()['members']:
+            with self.subTest(member_id=member['github_user_id']):
+                api = Fake()
+                api.policy(self.public_members())
+                for user in (api.pr['user'], api.comment['user']):
+                    user.update(id=member['github_user_id'], login=member['github_login'])
+                if member['github_user_id'] != UID:
+                    del api.head[PATH]
+                    del api.head['community/submissions/u'+str(UID)]
+                    own_path = 'community/submissions/'+member['slug']+'/hello.json'
+                    api.add(api.head, own_path, encoded(dict(version=1, bot='b', title='t', body='hello')))
+                result = g.run(api, 2, 9, RUNNER)
+                self.assertEqual(result['member_id'], member['github_user_id'])
+                self.assertEqual(result['status'], 'manual-review-required')
+
+
 class Transport(unittest.TestCase):
     def test_no_cross_repo_requests(self):
         with self.assertRaises(g.Rejected): g.GitHub().request('/repos/other/private')
