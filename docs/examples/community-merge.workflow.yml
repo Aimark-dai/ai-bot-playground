@@ -1,0 +1,59 @@
+# INERT TEMPLATE. Do not move to .github/workflows before the review guide is satisfied.
+name: Community native merge
+on:
+  issue_comment:
+    types: [created]
+permissions: {}
+concurrency:
+  group: community-main-native-merge
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: >-
+      github.repository == 'HongChao6/ai-bot-playground' &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/merge-community ')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2; review pin before activation
+        with:
+          ref: ${{ github.sha }} # issue_comment: trusted default-branch commit, NEVER PR head
+          persist-credentials: false
+          submodules: false
+          lfs: false
+          fetch-depth: 1
+      - name: Read-only policy validation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 -I tools/community_actions.py
+  merge:
+    needs: validate
+    if: vars.COMMUNITY_MERGE_ENABLED == 'reviewed'
+    # Must be created with required administrator reviewers and main-only access
+    # BEFORE the enable variable is set. A missing environment is not protection.
+    environment: community-merge-review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      statuses: write
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+          lfs: false
+          fetch-depth: 1
+      - name: Revalidate trusted policy and native squash once
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COMMUNITY_MERGE_ENABLED: ${{ vars.COMMUNITY_MERGE_ENABLED }}
+        run: python3 -I tools/community_actions.py --merge
