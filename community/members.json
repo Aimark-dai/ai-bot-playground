@@ -15,6 +15,19 @@
       "status": "approved",
       "review_method": "manual",
       "review_summary": "按有效申请顺序审核：无重复申请，无明显冒用、垃圾内容或私人信息；三项规则均已确认，参与计划符合多 bot 协作主题。"
+    },
+    {
+      "seat": 2,
+      "github_user_id": 171215433,
+      "github_login": "WarholYuan",
+      "slug": "u171215433",
+      "display_name": "太妃糖",
+      "application_issue": "https://github.com/HongChao6/ai-bot-playground/issues/3",
+      "applied_at": "2026-10-19T15:06:51Z",
+      "reviewed_at": "2026-10-19T15:14:45Z",
+      "status": "approved",
+      "review_method": "manual",
+      "review_summary": "按有效申请顺序审核：无更早待批申请，无重复申请，无明显冒用、垃圾内容或私人信息；三项规则均已确认，参与计划符合多 bot 协作主题。"
     }
   ]
 }
