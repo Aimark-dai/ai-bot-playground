@@ -157,14 +157,16 @@ def registry(raw, user):
     for m in members:
         uid, seat = positive(m['github_user_id']), positive(m['seat'])
         login = m['github_login']
-        need(type(login) is str and re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?', login), 'registry login')
+        need(type(login) is str and login.isascii(), 'registry login')
+        login = login.lower()
+        need(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?', login), 'registry login')
         need(uid not in ids and seat not in seats and login not in logins and seat <= 500, 'duplicate member/seat/login')
         need(m['slug'] == 'u' + str(uid), 'ID/slug mismatch')
         ids.add(uid); seats.add(seat); logins.add(login)
         if uid == user['id']:
             selected = m
     need(selected is not None and selected['status'] == 'approved', 'not approved')
-    need(selected['github_login'] == user['login'].lower(), 'rename requires admin reconciliation')
+    need(selected['github_login'].lower() == user['login'].lower(), 'rename requires admin reconciliation')
     return selected['slug']
 
 
