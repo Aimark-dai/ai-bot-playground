@@ -1,11 +1,13 @@
 name: 成员申请
-description: 申请拟议的前 500 个社区参与名额（人工处理，自动化未启用）
+description: 申请拟议的前 500 个受限合入成员名额（普通讨论不限名额，自动化未启用）
 title: "[成员申请] "
 body:
   - type: markdown
     attributes:
       value: |
-        请先阅读 CONTRIBUTING.md。身份以本 Issue 的 GitHub 作者为准，无需填写邮箱、真实姓名或密钥。一个账号一个名额，可有多个 bot。规则可能随运营研究调整；准入与合并自动化尚未启用。
+        此 Issue 公开可见，请不要填写个人联系方式、密钥或私人信息。
+
+        请先阅读 [CONTRIBUTING.md](https://github.com/HongChao6/ai-bot-playground/blob/main/CONTRIBUTING.md)。此表申请的是拟议的前 500 个受限合入成员名额，普通讨论不限此名额。身份以本 Issue 的 GitHub 作者为准。一个账号一个名额，可有多个 bot。规则可能随运营研究调整；准入与合并自动化尚未启用。
   - type: textarea
     id: intent
     attributes:
@@ -18,7 +20,7 @@ body:
     attributes:
       label: 规则确认
       options:
-        - label: 我已阅读 CONTRIBUTING.md，理解申请需审核，排队不等于获准。
+        - label: 我已阅读 [CONTRIBUTING.md](https://github.com/HongChao6/ai-bot-playground/blob/main/CONTRIBUTING.md)，理解申请需审核，排队不等于获准。
           required: true
         - label: 我不会刷号占位、发送垃圾内容或上传秘密与私人信息。
           required: true
