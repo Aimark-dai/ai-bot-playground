@@ -53,7 +53,7 @@ PR 评论读取使用 pull-requests:read，不授予多余 issues:read。不需 
 
 ## 数据和启动信任边界
 
-继续验证真实数字 user ID、approved 名册（最多500席）、login 改名需管理员核对、精确 SHA 评论、固定公开仓库 ID、完整未截断树、blob 哈希及大小。只准自己 `community/submissions/u<ID>/<小写记录名>.json` 的新增/修改；拒绝删除、其他目录、策略/代码/workflow、symlink/gitlink/执行位和路径穿越。最多20文件、每文件16 KiB、总计128 KiB。JSON严格限定字段类型，拒绝重复键、非法编码、非有限值。最终树审核不包含中间历史，所以选 squash。
+继续验证真实数字 user ID、approved 名册（最多500席）、login 格式、去重和匹配统一按小写比较，保留原始字段；真正改名需管理员核对、精确 SHA 评论、固定公开仓库 ID、完整未截断树、blob 哈希及大小。只准自己 `community/submissions/u<ID>/<小写记录名>.json` 的新增/修改；拒绝删除、其他目录、策略/代码/workflow、symlink/gitlink/执行位和路径穿越。最多20文件、每文件16 KiB、总计128 KiB。JSON严格限定字段类型，拒绝重复键、非法编码、非有限值。最终树审核不包含中间历史，所以选 squash。
 
 外来内容只经 API 取作数据，不 checkout/import/test/eval/install，不下载 PR artifact/cache。JSON正文不成为授权指令，正则只是附加过滤，不是执行或LLM沙箱；后续消费者不得执行文本或插入HTML。
 
@@ -61,7 +61,7 @@ PR 评论读取使用 pull-requests:read，不授予多余 issues:read。不需 
 
 ## 验证证据与启用前验收
 
-78 项离线测试通过，Python编译检查通过。测试覆盖授权/路径/完整树/内容攻击，以及事件身份、可信 source、adapter 漂移、成员撤销、重复事件、重新运行阻断、写 job 复验、固定 status SHA、status后 head变化、精确 squash 请求、HTTP拒绝、超时/畸形回执不重试、PR最终状态确认。Fake 只记录请求，**不模拟服务端 strict/CAS 或权限有效性**；旧 Fake CAS 及GraphQL写路径已经删除。
+81 项离线测试通过，Python编译检查通过。测试覆盖授权/路径/完整树/内容攻击，以及事件身份、可信 source、adapter 漂移、成员撤销、重复事件、重新运行阻断、写 job 复验、固定 status SHA、status后 head变化、精确 squash 请求、HTTP拒绝、超时/畸形回执不重试、PR最终状态确认。Fake 只记录请求，**不模拟服务端 strict/CAS 或权限有效性**；旧 Fake CAS 及GraphQL写路径已经删除。
 
 真实 GitHub Actions、环境审批、临时 token、strict 分支规则、status context 及合并竞态均未集成验证。所有真实验收仍待执行，至少包括：无关 issue_comment、格式不符及身份/策略校验失败不占写 job 并发组、不取消合法 pending；多个已验证请求的 pending 替换和环境审批等待行为按文档处理、不假设 FIFO；去除 issues:read 后临时 token 仍能读取 PR 评论；环境无审批或 PR 缺少审批不能写；关闭所有其他 auto-merge/status 消费者，失败后残留 success 不触发合并；管理员实际核实 strict/no-bypass/禁止force push，不能只看 protected=true；伪造同名绿灯不能绕过写 job；late head、late base/policy 被平台阻断；force push/bypass 被禁止；403/405不放松规则；响应不确定只查询；同 SHA 不继承其他 PR 身份；合法请求 squash 后原 PR merged。任一失败维持未启用/人工流程。
 
