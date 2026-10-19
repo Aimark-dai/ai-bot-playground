@@ -1,6 +1,6 @@
-"""Reviewed-snapshot data gate; inert until explicitly run by an administrator.
+"""Read-only evidence for manual, native protected PR merging.
 
-No workflow is shipped. Default is read-only. Never run this file from a PR checkout.
+No mutation or status publisher is shipped. Never run from a PR checkout.
 """
 import argparse
 import base64
@@ -34,10 +34,6 @@ SCHEMA_RULES = {
 
 class Rejected(ValueError):
     """Nothing was written by this gate."""
-
-
-class WriteOutcomeUnknown(RuntimeError):
-    """Inspect remote state before considering any retry."""
 
 
 def need(ok, reason):
@@ -102,45 +98,25 @@ class GitHub:
         self.token = token
         self.opener = urllib.request.build_opener(NoRedirect())
 
-    def request(self, path, data=None):
-        need(path.startswith(ROOT + '/') or path == ROOT or path == '/graphql', 'API target')
+    def request(self, path):
+        need(path.startswith(ROOT + '/') or path == ROOT, 'API target')
         headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'community-data-gate',
                    'X-GitHub-Api-Version': '2022-11-28'}
         if self.token:
             headers['Authorization'] = 'Bearer ' + self.token
-        encoded = None if data is None else json.dumps(data).encode()
-        if encoded is not None:
-            headers['Content-Type'] = 'application/json'
-        request = urllib.request.Request('https://api.github.com' + path, data=encoded, headers=headers)
+        request = urllib.request.Request('https://api.github.com' + path, headers=headers, method='GET')
         try:
             with self.opener.open(request, timeout=30) as response:
                 raw = response.read(MAX_RESPONSE + 1)
                 need(len(raw) <= MAX_RESPONSE, 'API response limit')
                 return strict_json(raw)
         except Exception as exc:
-            if data is not None:
-                # Never print response bodies, headers, tokens or raw exceptions.
-                raise WriteOutcomeUnknown('write response unavailable; inspect main, do not retry blindly') from None
             if isinstance(exc, Rejected):
                 raise
             raise Rejected('GitHub read failed; no mutation attempted') from None
 
     def get(self, suffix):
         return self.request(ROOT + suffix)
-
-    def atomic_commit(self, variables):
-        need(self.token, 'write credential absent')
-        query = 'mutation($input:CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid url}}}'
-        response = self.request('/graphql', {'query': query, 'variables': {'input': variables}})
-        try:
-            if response.get('errors') or not response.get('data', {}).get('createCommitOnBranch'):
-                raise WriteOutcomeUnknown('mutation not confirmed; inspect main before retry')
-            result = response['data']['createCommitOnBranch']['commit']
-            oid(result['oid'])
-            need(result['url'] == 'https://github.com/' + REPO + '/commit/' + result['oid'], 'commit URL mismatch')
-        except (KeyError, TypeError, AttributeError, Rejected):
-            raise WriteOutcomeUnknown('malformed write receipt; inspect main before retry') from None
-        return result
 
 
 def tree(api, commit_sha):
@@ -227,7 +203,7 @@ def prepare(api, pr_number, comment_id, runner_bytes):
     changed = {p for p in set(base) | set(head) if base.get(p) != head.get(p)}
     leaves = [p for p in changed if (head.get(p) or base[p])[1] != 'tree']
     need(1 <= len(leaves) <= 20, 'changed file count')
-    allowed_dirs, additions, total = set(), [], 0
+    allowed_dirs, files, total = set(), [], 0
     for p in sorted(leaves):
         need(re.fullmatch(r'community/submissions/' + re.escape(slug) + r'/[a-z0-9][a-z0-9-]{0,63}\.json', p), 'outside own data directory')
         need(p in head and head[p][:2] == ('100644', 'blob'), 'deletion or unsafe file mode')
@@ -241,42 +217,32 @@ def prepare(api, pr_number, comment_id, runner_bytes):
         payload(raw)
         total += len(raw)
         need(total <= 131072, 'aggregate size')
-        additions.append({'path': p, 'contents': base64.b64encode(raw).decode()})
+        files.append({'path': p, 'blob': head[p][2], 'size': len(raw)})
     need(changed - set(leaves) <= allowed_dirs, 'unexpected directory change')
-    # No PR histories are imported, only these validated bytes.
-    return {'auth': auth, 'additions': additions}
+    return {'auth': auth, 'files': files,
+            'policy_blobs': {p: base[p][2] for p in (MEMBERS, SCHEMA, RUNNER)}}
 
 
-def run(api, pr_number, comment_id, runner_bytes, apply=False):
+def run(api, pr_number, comment_id, runner_bytes):
     plan = prepare(api, pr_number, comment_id, runner_bytes)
-    if not apply:
-        return {'status': 'validated-only', 'base': plan['auth']['base'], 'head': plan['auth']['head'],
-                'paths': [x['path'] for x in plan['additions']]}
     fresh = authorization(api, pr_number, comment_id)
-    need(fresh == plan['auth'], 'head/base/request/identity changed; no write')
+    need(fresh == plan['auth'], 'head/base/request/identity changed; rerun validation')
     a = plan['auth']
-    variables = {
-        'branch': {'repositoryNameWithOwner': REPO, 'branchName': 'main'},
-        'expectedHeadOid': a['base'],
-        'message': {'headline': 'Apply community data snapshot from PR #' + str(pr_number),
-                    'body': 'Source head: ' + a['head'] + '\nRequest comment: ' + str(comment_id) + '\nMember ID: ' + str(a['user']['id'])},
-        'fileChanges': {'additions': plan['additions']},
-    }
-    result = api.atomic_commit(variables)
-    return {'status': 'snapshot-applied-pr-left-open', 'source_head': a['head'], 'commit': result}
+    # This observation is not a GitHub required check and cannot authorize a merge.
+    return {'status': 'manual-review-required', 'repository_id': REPO_ID,
+            'pr': pr_number, 'comment': comment_id, 'member_id': a['user']['id'],
+            'base': a['base'], 'head': a['head'], 'policy_blobs': plan['policy_blobs'],
+            'files': plan['files'], 'native_merge_head_sha': a['head']}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pr', type=int, required=True)
     parser.add_argument('--comment', type=int, required=True)
-    parser.add_argument('--apply-reviewed-snapshot', action='store_true')
     args = parser.parse_args()
     try:
         api = GitHub(os.environ.get('GITHUB_TOKEN'))
-        print(json.dumps(run(api, args.pr, args.comment, Path(__file__).read_bytes(), args.apply_reviewed_snapshot)))
-    except WriteOutcomeUnknown as exc:
-        print(json.dumps({'status': 'uncertain', 'reason': str(exc)})); return 3
+        print(json.dumps(run(api, args.pr, args.comment, Path(__file__).read_bytes())))
     except (Rejected, KeyError, TypeError, AttributeError) as exc:
         print(json.dumps({'status': 'rejected', 'reason': str(exc) if isinstance(exc, Rejected) else 'unexpected API/policy structure'})); return 2
     return 0
