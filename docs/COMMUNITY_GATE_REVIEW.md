@@ -1,57 +1,73 @@
-# 原生受保护 PR 合并：只读审核辅助，自动合入未完成
+# 待审 Actions 原生合并模板：尚未启用
 
-## 本版决策与现状
+## 交付与当前状态
 
-删除上一版 createCommitOnBranch 数据快照提交、写开关和所有写接口。程序只做 GET，输出 `manual-review-required`，绝不更新 main、发布成功检查、合并或关闭 PR。没有监听器、工作流或凭据配置。这不是已经完成的成员自助合入服务；本版提供安全审查辅助和最小人工过渡。
+`tools/community_gate.py` 保持只读策略校验。新增 `tools/community_actions.py` 作为可信 main 的运行入口，以及 **`docs/examples/community-merge.workflow.yml`**。模板不在 `.github/workflows`，不会被 GitHub 自动运行。本轮没有启用 Actions、创建环境/凭据、修改权限/保护规则或合并 main。没有真实集成测试，不宣称成员自助合入已经上线。
 
-目标体验是成员通过 fork/分支提交自己的合规 JSON PR，管理员先人工审核并通过 GitHub 原生受保护合并；以后才由经过审核的可信检查与运营入口承接。成功合并后原 PR 应成为 merged，并核实实际 merge commit。建议使用原生 squash，避免把最终树未显示的中间提交内容带入 main 历史；本校验器只验证最终树，不审计所有历史提交。
+不再需要独立 GitHub App 服务、账户或长期 token。未来运行只使用每个 job 的临时 `GITHUB_TOKEN`。原来的 createCommitOnBranch 快照写入路径已删除；正常成功结果是 GitHub 原生 squash merge，原 PR 为 merged。
 
-## 最小人工过渡
+## 两个 job 的职责
 
-1. 管理员独立检查并维护 main 的保护规则。若保护条件未验证，不执行合并，也不把本程序输出视作平台检查。此 PR 不设置或声称已经存在这些规则。
-2. 成员提交 PR，并在自己的 PR 留言 `/merge-community <完整40位head SHA>`。当前没有监听器，管理员按队列人工处理。head 改变后必须重发精确 SHA 请求。
-3. 从下述固定可信来源启动校验器，读取真实 PR/评论身份、当前 main 成员表和 schema，校验完整 base/head 树。输出记录 PR、评论、成员 ID、base/head SHA、三个 policy blob SHA、文件 blob 和大小，不输出数据正文。
-4. 管理员审阅精确 head 的完整 diff、成员资格、JSON 文本及输出。临近合并时重新读取 PR/base/评论并重跑；任何 head、base、成员表、schema、校验器变化都必须重新审核。程序最后也重读，但输出只是某时刻观察，不能提供之后的事务保证。
-5. 仅在 GitHub 严格必需检查、审批及禁止绕过规则实际满足时，使用原生 squash 合并。若通过 API，显式传该次审阅的完整 head `sha`；不要用不带 SHA 的合并请求。不得强推、直接写 main、使用 admin bypass 或放松保护来通过。
-6. 核实 PR `merged=true` 和 merge commit；排队/接受请求不是合并成功。失败重新核查原因，超时或结果不明先读 PR/远端状态，不盲目重复提交。新 head 或新 base 是新审核，不重放旧“通过”结果。
+1. `issue_comment: created` 仅从默认分支取工作流。模板先按目标仓库、PR 评论及命令前缀过滤；这些条件只是节流，不授予权限。脚本从 `GITHUB_EVENT_PATH` 读取 JSON，只把 PR/评论 ID 当定位线索，再从 API 重取身份和请求内容。正文不插值到 shell。
+2. 只读 validate job 在 GitHub 托管的一次性 runner 上 checkout **事件的 main `github.sha`**，从不 checkout PR head/merge ref。不保存 Git 凭据，不取 submodule/LFS，不安装依赖。`python3 -I` 执行可信策略；令牌仅 Contents/Pull requests/Issues read。
+3. 写 job 在独立新 runner 上重复同样的可信 main checkout，经过 `community-merge-review` 环境的管理员审批后，**重新执行完整策略验证**，不接收上一个 job 的证据 artifact，也不因同名 check 绿灯跳过授权。源提交必须等于当前 main；main 前进则拒绝，成员更新 PR 后发新请求。
+4. 写 job 将固定 `community-data-policy` success status 发布到刚验证的**精确 head SHA**，然后再次读取身份、请求、head/base，最后只调用一次原生 `PUT /pulls/N/merge`，固定 `merge_method=squash` 和完整 `sha`。无 update-ref、force push、直接内容提交或 bypass 参数。
+5. 必须收到有效 merge receipt，并重读 PR 确认 `merged=true`、`merge_commit_sha` 一致，才报告 merged。已 merged 的重复事件只读退出，不把他人的合并归功于自己。
 
-这仍需要管理员处理，不能声称普通成员已有 Merge 权限或自动监听。人工复查缩小竞态窗口，但不能代替平台强制约束。
+issue_comment job 的默认运行状态属于 main，不能作为 PR head 的资格检查。显式发布 head status 才用于严格分支保护。GitHub Actions App 身份不唯一对应 workflow，固定 context/source 也不能证明是哪段代码产生结果；本方案的合并 job 必须自行校验全部策略。其他可信管理员/自动化也不得仅凭这个绿灯认定成员请求获授权。禁止另外启用原生 auto-merge 或其他消费该 status 的自动合并器来绕开这条路径。
 
-## 自动化前必须实现并实测的平台契约
+## 必须由管理员先建立的部署前提
 
-- main 要求 PR、审核和严格必需检查 `community-data-policy`；检查必须绑定指定可信 GitHub App 来源，不接受 any source。同名成功检查不能由外来代码或一般写权限主体替代。规则适用于实际合并主体，禁止 bypass、force push 和删除；维护 policy 的管理流程也必须受审查。不要给成员整库 collaborator/write 权限。
-- 可信检查发布者必须对**精确 PR head SHA**重新执行本校验，输出记录 base SHA、policy blob SHA、PR 编号及作者 ID。报告文本中的 SHA 不是平台强制绑定；check/status 必须确实附着到该 SHA。当前程序没有实现发布者。
-- strict up-to-date 使 main 前进后旧 head 不能直接合并。更新 head 后重新取当前 main policy、重新校验并在新 SHA 上发布结果；不能复用先前 base/policy 的绿色检查。main push、PR synchronize/reopen、成员资格或请求变化均需重新处理。不得用 skipped/neutral 代替成功资格校验；失败和缺失检查必须阻断。检查发布前再复核状态，定期修复遗漏事件。
-- 同一 head SHA 的检查可被多个 PR 使用，不能把仅附着 SHA 的结果误认为 GitHub 同时绑定了 PR 作者/评论。未来发布者和合并入口必须核实 PR 关联及精确请求，拒绝模糊或跨 PR 重用；在此问题实测解决前不启用自助合并。
-- 合并入口使用平台原生接口，传完整 `sha`，没有绕过资格。它不等于“先 GET 检查全绿，再自行写 refs”。本文选择 strict 分支更新流程，不实现 merge queue。若以后选择队列，必须支持 merge_group 的临时 SHA/队列基线验证、可信来源和最终状态查询，不能直接复用 PR-head 检查。
+本程序仅从普通分支 API 检查 `protected=true` 及当前 SHA，**没有证明 strict、禁止 bypass、force push 等具体设置**。Get branch protection API 文档要求 Administration read，而工作流的 GITHUB_TOKEN permissions 不提供该管理权限；不为此申请新凭据或扩大权限。完整配置须由管理员在启用前及每次环境审批时核实，不能把仓库变量当作证明。
 
-## 平台限制与尚未完成的保证
+- main 必须要求 PR、至少一位可信审批者、过期审批失效、严格必需状态检查（Require branches to be up to date）。将 `community-data-policy` 配置为 required context，来源绑定 GitHub Actions（这只是附加约束，不替代运行器验证）。不得设置成 loose，也不能只要求 issue_comment job 名称。
+- 对实际 GITHUB_TOKEN 合并主体及管理员执行保护规则，没有 bypass；禁止 force push、删除 main 和直接推送。成员没有整库 write。其他工作流不得以外来代码获得 contents/statuses write。维护成员表、schema、校验器及工作流本身的管理流程必须独立审核。
+- 创建 `community-merge-review` environment，限制仅 main，并配置独立管理员 required reviewer；禁止审批绕过。先核实环境保护有效，再设置仓库变量 `COMMUNITY_MERGE_ENABLED=reviewed`。不存在的 environment 可能被自动创建且无保护，所以只写 environment 名称不足够。该版本保留**每次写 job 人工审批**，不宣称无人值守合并。
+- 禁止仓库自动合并和其他自动消费者，否则写 job 最后复查前发布的 status 可能被其他流程使用。启用时检查当前 PR 没有遗留自动合并请求。
 
-原生合并的 `sha` 条件绑定 head，不提供 expected base SHA / policy SHA / 评论版本的联合 CAS。严格检查依赖平台保护规则、无绕过主体和可信发布者；本地 JSON 报告不能替代这些。当前程序没有读取/验证保护配置，也没有检查发布者或合并执行器，所以**不能独立安全地自动合并**。
+在这些前提未被证明、平台不支持环境保护或保护拒绝 GITHUB_TOKEN 合并时，保留人工原生 squash merge 过渡；不要用 admin merge、取消检查或创建 PAT 来跑通。
 
-评论删除、PR 状态或成员身份外部状态在最后读取后仍可能改变。通过 main 修改成员资格的撤销可结合 strict 更新要求使旧 head 失效，但即时评论撤销不与 merge 事务绑定。若产品要求所有这些状态都原子取消在途合并，现有简单合并接口不能承诺；保持人工流程，另行评估平台能力，不追加未经审查的复杂账本系统。
+## 最小权限与启用顺序
 
-目前没有实测本仓库规则、检查来源防伪或合并接口竞态行为。启用前需在明确批准环境验证：旧 head 被拒、base/policy 前进后旧绿灯阻断、新 head 必须新检、伪造来源拒绝、同 SHA 跨 PR 不继承身份授权、无 bypass、结果不明时只查询，以及成功后原 PR merged 状态。任何一项不成立都维持人工待审。
+| 部分 | 权限 | 用途 |
+| --- | --- | --- |
+| 工作流全局 | `{}` | 无默认授权 |
+| validate job | contents: read、pull-requests: read、issues: read | 读取可信 main、PR、评论及 blobs |
+| merge job | contents: write、statuses: write、pull-requests: read、issues: read | 原生 squash merge、固定 head status、重新校验 |
 
-## 校验与执行边界
+不需 checks write、pull-requests write、actions write、Administration、id-token 或秘密配置。只使用 GitHub 自带临时令牌；不给成员凭据。checkout 固定到审核过的官方 action commit，`persist-credentials:false`；写 job 的 action 也属于可信计算边界，启用前重审固定版本，不用浮动 tag。
 
-保留真实数字 user ID、approved 名册（最多500席）、login 改名需管理员核对、精确 SHA 评论、固定公开仓库 ID、完整未截断树、blob 哈希和大小校验。只准自己 `community/submissions/u<ID>/<小写记录名>.json` 的新增/修改；拒绝删除、其他目录、策略/代码/workflow、symlink/gitlink/执行位、路径穿越。最多20文件、每文件16 KiB、总计128 KiB。JSON严格限定字段和类型，拒绝重复键、非法编码、非有限值。
+启用由管理员另行完成：独立审核固定代码 → 建立上述保护、环境审批与禁止绕过前提 → 在获准测试场景验证临时 token 读写能力和所有竞态/拒绝案例 → 将模板复制到 `.github/workflows` 并通过受审 PR 合入 → 配置 required context（必要时在禁用写 job 状态安全引入该 context） → 最后设置 enable 变量。若平台要求检查先出现才能选择，使用规则设置界面允许的 context 输入或另行审核的引导流程，不绕过保护。没有在本轮执行这些步骤。
 
-JSON 文本永远只是数据。正则过滤主动内容标记只是附加限制，不是执行沙箱、LLM沙箱或提示注入防护；消费者不得执行内容、插入HTML，或把正文当权限指令。无 LLM 参与授权。
+## base、policy、重放与响应不确定
 
-**启动前信任由外部保证。** 自身 blob 与 main 比对发生在 Python imports 之后，只能检测策略版本漂移，不能证明恶意 checkout 启动安全。操作者必须先在进程外核对独立审核的固定提交及文件哈希，把单文件置于仅管理员可写的可信目录；使用可信 Python 3.9+ 和干净临时工作目录，以 `python3 -I /trusted/path/community_gate.py --pr N --comment ID` 启动。`-I` 隔离脚本目录、用户 site 与 PYTHONPATH 的导入影响，仍不能把恶意脚本本身变可信。禁止从 PR checkout 启动、导入、测试或恢复其缓存/artifact；不要将 PR 中的模块放入可信目录。测试文件也必须先独立审查，测试会执行 Python。
+每次运行都要求 PR head 包含当前 main，校验 runner 的 blob 与当前 main 一致；Actions adapter 也验证自己的 blob，且事件可信源码 SHA 必须等于 main。head/base、成员表、schema、源代码发生变化都需重新准备 PR/命令，不复用旧策略。原生 merge 的 `sha` 条件拒绝 late head 变化；base/policy 的晚到变化依赖服务端 **strict up-to-date 且不可绕过**，不是本地 GET 与 merge 的联合事务。
 
-## 权限与验证证据
+评论撤销和身份外部状态在最后读取后仍可能变化，没有联合 CAS；精确 SHA 请求无法保证严格取消所有在途请求。若必须提供即时原子撤销，本模板不满足。main 上的资格撤销依靠 strict 规则阻断旧 head，前提是禁止回退/force push。
 
-当前只读公开数据可匿名访问（受速率限制）；如使用既有凭据，限目标仓库 Metadata/Contents/Pull requests 读取，以及评论所需 Issues 或 Pull requests 读取能力。本轮未读取或配置凭据。
+同 SHA status 可在多个 PR 复用，因此写 job 不信任 status 本身，而是重新验证本次 PR 作者、评论 ID/真实用户 ID、成员身份及完整差异，再以明确 PR 编号合并。若其他自动化仅看 status，此保证失效。
 
-未来检查发布者需限定本仓库的 Checks write 与上述读取权限；如选择 commit status 则需 Commit statuses write，二者不要无理由同时授予。原生合并运营主体按 GitHub API 需 Contents write，但不给成员、不让 PR 代码接触、不给规则 bypass。管理员配置保护需仓库管理权限，运行器不需 Administration write。精确安装权限及实际端点响应需启用前确认；本 PR 不增加任何权限。
+全工作流使用固定 concurrency group、`cancel-in-progress:false`；GitHub 不保证 FIFO，pending 事件也可能被替换，这不是持久队列。成员看到未处理请求时由管理员检查后重新请求。`GITHUB_RUN_ATTEMPT != 1` 拒绝写，避免把 Re-run 当自动重试。串行化不覆盖其他 workflow 或管理员操作，服务端保护仍必需。
 
-50 项离线测试通过，使用假 API 固定响应验证本地拒绝规则和报告绑定；HTTP传输测试确认只发 GET 且拒绝 GraphQL/写参数。没有把这些测试算作 GitHub 集成验证。原 Fake CAS 曾把冲突直接抛 Rejected，而真实 GraphQL 路径会归类为 uncertain，二者并不一致：本版删除整个写适配器及 Fake CAS 测试，不再声称模拟或验证服务端原子合并。删除的成功案例不能算进本版测试数。
+明确的原生 merge HTTP 403/404/405/409/422 归为拒绝，不重试；网络超时、5xx、异常/畸形 receipt、成功后的确认失败归为 uncertain，不盲重试。status 发布不确定时根本不尝试 merge。管理员必须检查 PR/merge commit/运行日志；未确认前不审批新请求。新 comment 不是绕过不确定结果调查的方式。重复事件在 PR 已 merged 时只读退出；没有声称分布式 exactly-once。
+
+## 数据和启动信任边界
+
+继续验证真实数字 user ID、approved 名册（最多500席）、login 改名需管理员核对、精确 SHA 评论、固定公开仓库 ID、完整未截断树、blob 哈希及大小。只准自己 `community/submissions/u<ID>/<小写记录名>.json` 的新增/修改；拒绝删除、其他目录、策略/代码/workflow、symlink/gitlink/执行位和路径穿越。最多20文件、每文件16 KiB、总计128 KiB。JSON严格限定字段类型，拒绝重复键、非法编码、非有限值。最终树审核不包含中间历史，所以选 squash。
+
+外来内容只经 API 取作数据，不 checkout/import/test/eval/install，不下载 PR artifact/cache。JSON正文不成为授权指令，正则只是附加过滤，不是执行或LLM沙箱；后续消费者不得执行文本或插入HTML。
+
+自身 blob 校验发生在 imports 之后，只能发现版本漂移，不能使恶意代码安全。本方案信任**受保护 main 上的工作流和事件固定 main 提交**，用隔离新 runner、可信 Python `-I`、显式同目录导入已受信任的 gate；`-I` 不是脚本本身的沙箱。不要把 ref 改成 PR head、使用外来 action/local action 或把 PR 内容放入可信源码目录。审核和测试文件本身先经过独立审查。
+
+## 验证证据与启用前验收
+
+78 项离线测试通过，Python编译检查通过。测试覆盖授权/路径/完整树/内容攻击，以及事件身份、可信 source、adapter 漂移、成员撤销、重复事件、重新运行阻断、写 job 复验、固定 status SHA、status后 head变化、精确 squash 请求、HTTP拒绝、超时/畸形回执不重试、PR最终状态确认。Fake 只记录请求，**不模拟服务端 strict/CAS 或权限有效性**；旧 Fake CAS 及GraphQL写路径已经删除。
+
+真实 GitHub Actions、环境审批、临时 token、strict 分支规则、status context 及合并竞态均未集成验证。验收至少包括：环境无审批不能写；伪造同名绿灯不能绕过写 job；late head、late base/policy 被平台阻断；force push/bypass 被禁止；403/405不放松规则；响应不确定只查询；同 SHA 不继承其他 PR 身份；合法请求 squash 后原 PR merged。任一失败维持未启用/人工流程。
 
 ```sh
 python3 -I -m unittest discover -s tests -v
-python3 -I -m py_compile tools/community_gate.py tests/test_community_gate.py
+python3 -I -m py_compile tools/community_gate.py tools/community_actions.py tests/test_community_gate.py tests/test_community_actions.py
 ```
 
-官方依据：[原生合并接口、sha 与权限](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request)、[strict 必需检查与指定 App 来源](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)。自动化部署需另行独立审核。
+官方依据：[issue_comment 的默认分支语义](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#issue_comment)、[原生 merge SHA 与权限](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request)、[commit status](https://docs.github.com/en/rest/commits/statuses#create-a-commit-status)、[strict 分支保护](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)、[保护配置读取权限](https://docs.github.com/en/rest/branches/branch-protection#get-branch-protection)、[环境保护](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)。
