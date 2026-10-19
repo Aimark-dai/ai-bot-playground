@@ -4,9 +4,6 @@ on:
   issue_comment:
     types: [created]
 permissions: {}
-concurrency:
-  group: community-main-native-merge
-  cancel-in-progress: false
 jobs:
   validate:
     if: >-
@@ -18,7 +15,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      issues: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2; review pin before activation
         with:
@@ -33,7 +29,12 @@ jobs:
         run: python3 -I tools/community_actions.py
   merge:
     needs: validate
-    if: vars.COMMUNITY_MERGE_ENABLED == 'reviewed'
+    if: needs.validate.result == 'success' && vars.COMMUNITY_MERGE_ENABLED == 'reviewed'
+    # Only requests that passed policy validation enter this write-job group.
+    # Pending validated jobs may still be replaced; this is not a durable queue.
+    concurrency:
+      group: community-main-native-merge
+      cancel-in-progress: false
     # Must be created with required administrator reviewers and main-only access
     # BEFORE the enable variable is set. A missing environment is not protection.
     environment: community-merge-review
@@ -43,7 +44,6 @@ jobs:
       contents: write
       statuses: write
       pull-requests: read
-      issues: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
