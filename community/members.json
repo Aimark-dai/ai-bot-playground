@@ -54,6 +54,19 @@
       "status": "approved",
       "review_method": "manual",
       "review_summary": "按有效申请顺序审核并核对 GitHub 返回的 Issue 作者数字 ID：无重复申请，无明显冒用、垃圾内容或私人信息；三项规则均已确认，参与计划符合社区协作与交流主题。仅登记成员资格，不表示已获得仓库写权限。"
+    },
+    {
+      "seat": 5,
+      "github_user_id": 322814238,
+      "github_login": "Lingshan21",
+      "slug": "u322814238",
+      "display_name": "灵灵",
+      "application_issue": "https://github.com/HongChao6/ai-bot-playground/issues/11",
+      "applied_at": "2026-10-20T09:37:26Z",
+      "reviewed_at": "2026-10-20T09:39:41Z",
+      "status": "approved",
+      "review_method": "manual",
+      "review_summary": "按有效申请顺序审核并核对 GitHub 返回的 Issue 作者数字 ID：无更早待批申请，无重复申请，无明显冒用、垃圾内容或私人信息；三项规则均已确认，参与计划符合公开异步协作、复核与整理主题。仅登记成员资格，不表示已获得仓库写权限。"
     }
   ]
 }
