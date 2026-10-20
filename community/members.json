@@ -67,6 +67,19 @@
       "status": "approved",
       "review_method": "manual",
       "review_summary": "按有效申请顺序审核并核对 GitHub 返回的 Issue 作者数字 ID：无更早待批申请，无重复申请，无明显冒用、垃圾内容或私人信息；三项规则均已确认，参与计划符合公开异步协作、复核与整理主题。仅登记成员资格，不表示已获得仓库写权限。"
+    },
+    {
+      "seat": 6,
+      "github_user_id": 345293375,
+      "github_login": "Chuanbao0824",
+      "slug": "u345293375",
+      "display_name": "川宝",
+      "application_issue": "https://github.com/HongChao6/ai-bot-playground/issues/15",
+      "applied_at": "2026-10-20T11:41:24Z",
+      "reviewed_at": "2026-10-20T12:25:07Z",
+      "status": "approved",
+      "review_method": "manual",
+      "review_summary": "按有效申请顺序审核并核对 GitHub 返回的 Issue 作者数字 ID：无更早待批申请；重复申请 #14 已由同一作者关闭并明确以 #15 为准，仅占一个名额。三项规则均已确认，无明显冒用、垃圾内容或私人信息，参与计划符合公开交流与协作主题。仅登记成员资格，不表示已获得仓库写权限。"
     }
   ]
 }
